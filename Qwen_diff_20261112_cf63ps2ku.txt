@@ -1,0 +1,358 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 12 Nov 2026 09:30:00 +0000
+Subject: [PATCH] refactor(application): extract TablePager from TableQueryViewModel
+
+Move the paging position of the table screen (current cursor, history
+stack, last result, has-next) into TablePager, a pure class in
+Application/Search. The view model keeps fetching, busy/error state and
+every binding, so TableQueryView.xaml is unchanged. PageCursor becomes
+a public record next to the pager. Adds 9 TablePagerTests.
+
+Static review only: not compiled, not run (no .NET in the AI sandbox).
+
+Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Wg2Gr12sYwbZ7CRCZr8hMn
+---
+diff --git a/src/FastDbExplorer.Application/Search/TablePager.cs b/src/FastDbExplorer.Application/Search/TablePager.cs
+new file mode 100644
+--- /dev/null
++++ b/src/FastDbExplorer.Application/Search/TablePager.cs
+@@ -0,0 +1,56 @@
++using FastDbExplorer.Domain;
++
++namespace FastDbExplorer.Application.Search;
++
++/// <summary>One page position: the OFFSET depth and, for keyset paging, the last key of the page before it.</summary>
++public sealed record PageCursor(long Offset, object?[]? AfterKey);
++
++/// <summary>
++/// Keeps the paging position of one table query: the current cursor, the stack of visited pages and the last
++/// result shown. The caller fetches the pages; the pager only decides where next and previous are.
++/// Pure: no UI, no database.
++/// </summary>
++public sealed class TablePager
++{
++    private readonly Stack<PageCursor> _history = new();
++
++    public PageCursor Current { get; private set; } = new(0, null);
++    public PageResult? LastResult { get; private set; }
++    public bool HasNext { get; private set; }
++    public bool HasPrevious => _history.Count > 0;
++
++    /// <summary>A new query starts at the first page and forgets the pages of the previous query.</summary>
++    public void Restart()
++    {
++        _history.Clear();
++        Current = new PageCursor(0, null);
++    }
++
++    /// <summary>The cursor of the next page, or null when no result has been shown yet.</summary>
++    public PageCursor? NextCursor(PageRequest baseRequest)
++    {
++        if (LastResult is null) return null;
++        var offset = Current.Offset + baseRequest.PageSize;
++        return new PageCursor(offset, PageStreamer.AfterKeyFor(baseRequest, offset, LastResult.LastKey));
++    }
++
++    /// <summary>The cursor of the previous page, or null on the first page. Does not move yet.</summary>
++    public PageCursor? PreviousCursor() => _history.Count > 0 ? _history.Peek() : null;
++
++    /// <summary>Commits a fetched next page: the current page becomes history.</summary>
++    public void Advance(PageCursor next)
++    {
++        _history.Push(Current);
++        Current = next;
++    }
++
++    /// <summary>Commits a fetched previous page: one step back through the history.</summary>
++    public void Back() => Current = _history.Pop();
++
++    /// <summary>Records the result now on screen (also after re-fetching the current page with more columns).</summary>
++    public void Record(PageResult result)
++    {
++        LastResult = result;
++        HasNext = result.HasMore;
++    }
++}
+diff --git a/src/FastDbExplorer.Wpf/ViewModels/TableQueryViewModel.cs b/src/FastDbExplorer.Wpf/ViewModels/TableQueryViewModel.cs
+--- a/src/FastDbExplorer.Wpf/ViewModels/TableQueryViewModel.cs
++++ b/src/FastDbExplorer.Wpf/ViewModels/TableQueryViewModel.cs
+@@ -41,8 +41,6 @@
+     private const int DefaultSelectedColumns = 20;
+     private const int MaxMapDetailColumns = MapPointFactory.MaxDetailColumns;
+ 
+-    private sealed record PageCursor(long Offset, object?[]? AfterKey);
+-
+     private readonly IDatabaseMetadataService _metadata;
+     private readonly ConnectionSettings _settings;
+     private readonly IFileDialogService _dialogs;
+@@ -50,7 +48,7 @@
+     private readonly string _database;
+     private readonly TableInfo _table;
+     private readonly CancellationTokenSource _lifetime = new();
+-    private readonly Stack<PageCursor> _history = new();
++    private readonly TablePager _pager = new();
+     private List<ColumnInfo> _keyColumns = [];
+     private IReadOnlyList<ColumnInfo> _columnMeta = [];
+     private SearchPoint? _searchPoint;
+@@ -70,9 +68,7 @@
+     }
+ 
+     private IReadOnlyList<string> _displayColumns = [];
+-    private PageCursor _current = new(0, null);
+     private PageRequest? _base;
+-    private PageResult? _lastResult;
+     private CancellationTokenSource? _running;
+     private long _exportedRows;
+     private bool _suppressMapDetailChange;
+@@ -210,8 +206,7 @@
+             return;
+         }
+         _displayColumns = displayColumns;
+-        _history.Clear();
+-        _current = first;
++        _pager.Restart();
+         Show(fetched.Value.Result, fetched.Value.Ms);
+         StartCount();
+     }
+@@ -219,24 +214,23 @@
+     [RelayCommand(CanExecute = nameof(CanGoNext))]
+     private async Task NextAsync()
+     {
+-        if (_base is null || _lastResult is null) return;
+-        var offset = _current.Offset + _base.PageSize;
+-        var next = new PageCursor(offset, PageStreamer.AfterKeyFor(_base, offset, _lastResult.LastKey));
++        if (_base is null) return;
++        var next = _pager.NextCursor(_base);
++        if (next is null) return;
+         var fetched = await FetchAsync(next);
+         if (fetched is null) return;
+-        _history.Push(_current);
+-        _current = next;
++        _pager.Advance(next);
+         Show(fetched.Value.Result, fetched.Value.Ms);
+     }
+ 
+     [RelayCommand(CanExecute = nameof(CanGoPrevious))]
+     private async Task PreviousAsync()
+     {
+-        var previous = _history.Peek();
++        var previous = _pager.PreviousCursor();
++        if (previous is null) return;
+         var fetched = await FetchAsync(previous);
+         if (fetched is null) return;
+-        _history.Pop();
+-        _current = previous;
++        _pager.Back();
+         Show(fetched.Value.Result, fetched.Value.Ms);
+     }
+ 
+@@ -482,13 +476,13 @@
+ 
+     private async Task<bool> EnsureMapValuesAvailableAsync()
+     {
+-        if (_base is null || _lastResult is null) return false;
++        if (_base is null || _pager.LastResult is null) return false;
+         var requiredColumns = QueryColumnsOf(_displayColumns).Concat(GetMapRequiredColumns()).Distinct(StringComparer.Ordinal).ToList();
+         if (_base.Columns.SequenceEqual(requiredColumns, StringComparer.Ordinal)) return true;
+ 
+         var previousBase = _base;
+         _base = _base with { Columns = requiredColumns };
+-        var fetched = await FetchAsync(_current);
++        var fetched = await FetchAsync(_pager.Current);
+         if (fetched is null)
+         {
+             _base = previousBase;
+@@ -502,10 +496,10 @@
+             return false;
+         }
+ 
+-        _lastResult = fetched.Value.Result;
++        _pager.Record(fetched.Value.Result);
+         for (var index = 0; index < Rows.Count; index++)
+             Rows[index].UpdateMapValues(QueryMapProjection.Values(fetched.Value.Result.Columns, fetched.Value.Result.Rows[index]));
+-        HasNext = fetched.Value.Result.HasMore;
++        HasNext = _pager.HasNext;
+         return true;
+     }
+ 
+@@ -575,7 +569,7 @@
+     private void Show(PageResult result, long milliseconds)
+     {
+         var firstResult = !HasResult;
+-        _lastResult = result;
++        _pager.Record(result);
+         ResultColumns = _displayColumns;
+         OnPropertyChanged(nameof(ResultColumns));
+         ResultColumnsChanged?.Invoke(ResultColumns);
+@@ -591,11 +585,11 @@
+         HasResult = true;
+         // The settings card is tall. Once the first result is there, the table gets the room; the gear button brings the card back.
+         if (firstResult) IsConfigVisible = false;
+-        HasNext = result.HasMore;
+-        HasPrevious = _history.Count > 0;
++        HasNext = _pager.HasNext;
++        HasPrevious = _pager.HasPrevious;
+         PageInfo = result.Rows.Count == 0
+             ? Strings.NoResults
+-            : $"{Strings.RowsRange(_current.Offset + 1, _current.Offset + result.Rows.Count)} · {milliseconds:N0} ms";
++            : $"{Strings.RowsRange(_pager.Current.Offset + 1, _pager.Current.Offset + result.Rows.Count)} · {milliseconds:N0} ms";
+     }
+ 
+     private async IAsyncEnumerable<object?[]> ReadExportRowsAsync(
+diff --git a/tests/FastDbExplorer.Tests/TablePagerTests.cs b/tests/FastDbExplorer.Tests/TablePagerTests.cs
+new file mode 100644
+--- /dev/null
++++ b/tests/FastDbExplorer.Tests/TablePagerTests.cs
+@@ -0,0 +1,148 @@
++using FastDbExplorer.Application.Search;
++using FastDbExplorer.Domain;
++
++namespace FastDbExplorer.Tests;
++
++public class TablePagerTests
++{
++    private static PageRequest Request(bool useKeyset = true, int pageSize = 100) => new(
++        "sales", "dbo", "orders", ["Name"], [], FilterLogic.And, ["Id"], useKeyset, pageSize, 0, null);
++
++    private static PageResult Result(bool hasMore = true, object?[]? lastKey = null) =>
++        new(["Name"], [["x"]], hasMore, lastKey);
++
++    [Fact]
++    public void A_new_pager_starts_at_the_first_page_with_no_result()
++    {
++        var pager = new TablePager();
++
++        Assert.Equal(new PageCursor(0, null), pager.Current);
++        Assert.Null(pager.LastResult);
++        Assert.False(pager.HasNext);
++        Assert.False(pager.HasPrevious);
++        Assert.Null(pager.NextCursor(Request()));
++        Assert.Null(pager.PreviousCursor());
++    }
++
++    [Fact]
++    public void Recording_a_result_updates_last_result_and_has_next()
++    {
++        var pager = new TablePager();
++        var result = Result();
++
++        pager.Record(result);
++
++        Assert.Same(result, pager.LastResult);
++        Assert.True(pager.HasNext);
++
++        pager.Record(Result(hasMore: false));
++        Assert.False(pager.HasNext);
++    }
++
++    [Fact]
++    public void The_next_cursor_advances_by_the_page_size()
++    {
++        var pager = new TablePager();
++        pager.Record(Result());
++
++        var next = pager.NextCursor(Request(pageSize: 100));
++
++        Assert.Equal(new PageCursor(100, null), next);
++    }
++
++    [Fact]
++    public void Below_the_keyset_threshold_the_next_cursor_uses_offset_only()
++    {
++        var pager = new TablePager();
++        pager.Record(Result(lastKey: new object?[] { 42 }));
++
++        var next = pager.NextCursor(Request(useKeyset: true));
++
++        Assert.Null(next!.AfterKey);
++    }
++
++    [Fact]
++    public void Past_the_keyset_threshold_the_next_cursor_carries_the_last_key()
++    {
++        var pager = new TablePager();
++        var lastKey = new object?[] { 42 };
++        pager.Record(Result(lastKey: lastKey));
++        pager.Advance(new PageCursor(PageStreamer.KeysetThreshold - 100, null));
++        pager.Record(Result(lastKey: lastKey));
++
++        var next = pager.NextCursor(Request(pageSize: 100));
++
++        Assert.Equal(PageStreamer.KeysetThreshold, next!.Offset);
++        Assert.Same(lastKey, next.AfterKey);
++    }
++
++    [Fact]
++    public void Without_keyset_paging_the_next_cursor_never_carries_a_key()
++    {
++        var pager = new TablePager();
++        pager.Record(Result(lastKey: new object?[] { 42 }));
++        pager.Advance(new PageCursor(PageStreamer.KeysetThreshold, null));
++        pager.Record(Result(lastKey: new object?[] { 42 }));
++
++        var next = pager.NextCursor(Request(useKeyset: false));
++
++        Assert.Null(next!.AfterKey);
++    }
++
++    [Fact]
++    public void Advance_then_back_walks_the_history()
++    {
++        var pager = new TablePager();
++        pager.Record(Result());
++        var first = pager.Current;
++        var second = pager.NextCursor(Request())!;
++        pager.Advance(second);
++        pager.Record(Result());
++        var third = pager.NextCursor(Request())!;
++        pager.Advance(third);
++        pager.Record(Result());
++
++        Assert.True(pager.HasPrevious);
++        Assert.Equal(third, pager.Current);
++        Assert.Equal(second, pager.PreviousCursor());
++
++        pager.Back();
++        Assert.Equal(second, pager.Current);
++        Assert.True(pager.HasPrevious);
++
++        pager.Back();
++        Assert.Equal(first, pager.Current);
++        Assert.False(pager.HasPrevious);
++        Assert.Null(pager.PreviousCursor());
++    }
++
++    [Fact]
++    public void Restart_forgets_the_history_and_returns_to_the_first_page()
++    {
++        var pager = new TablePager();
++        pager.Record(Result());
++        pager.Advance(pager.NextCursor(Request())!);
++        pager.Record(Result());
++
++        pager.Restart();
++
++        Assert.Equal(new PageCursor(0, null), pager.Current);
++        Assert.False(pager.HasPrevious);
++    }
++
++    [Fact]
++    public void Recording_a_refetched_page_keeps_the_position()
++    {
++        var pager = new TablePager();
++        pager.Record(Result());
++        pager.Advance(pager.NextCursor(Request())!);
++        pager.Record(Result());
++        var position = pager.Current;
++
++        pager.Record(Result(hasMore: false));
++
++        Assert.Equal(position, pager.Current);
++        Assert.True(pager.HasPrevious);
++        Assert.False(pager.HasNext);
++    }
++}
+-- 
+2.20.1
