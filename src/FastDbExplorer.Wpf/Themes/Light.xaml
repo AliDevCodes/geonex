@@ -1,0 +1,34 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <SolidColorBrush x:Key="BgBrush" Color="#F4F7FB" />
+  <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="SurfaceAltBrush" Color="#EAF0F8" />
+  <SolidColorBrush x:Key="LineBrush" Color="#DCE4EF" />
+  <SolidColorBrush x:Key="BorderStrongBrush" Color="#B9C6D8" />
+  <SolidColorBrush x:Key="TextBrush" Color="#0B1424" />
+  <SolidColorBrush x:Key="MutedBrush" Color="#5B6B85" />
+  <SolidColorBrush x:Key="AccentBrush" Color="#0284C7" />
+  <SolidColorBrush x:Key="AccentSoftBrush" Color="#E0F2FE" />
+  <SolidColorBrush x:Key="OnAccentBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="DangerBrush" Color="#DC2646" />
+  <SolidColorBrush x:Key="DangerSoftBrush" Color="#FDE8EC" />
+  <SolidColorBrush x:Key="SuccessBrush" Color="#0F9D6E" />
+  <SolidColorBrush x:Key="SuccessSoftBrush" Color="#E0F6EE" />
+  <SolidColorBrush x:Key="WarningBrush" Color="#B45309" />
+  <SolidColorBrush x:Key="WarningSoftBrush" Color="#FDF1E2" />
+  <SolidColorBrush x:Key="DashboardBackgroundBrush" Color="#F4F7FB" />
+  <SolidColorBrush x:Key="DashboardSurfaceBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="DashboardHoverBrush" Color="#EAF0F8" />
+  <SolidColorBrush x:Key="DashboardSoftBrush" Color="#E0F2FE" />
+  <SolidColorBrush x:Key="DashboardLineBrush" Color="#DCE4EF" />
+  <SolidColorBrush x:Key="DashboardOutlineBrush" Color="#728198" />
+  <SolidColorBrush x:Key="DashboardTextBrush" Color="#0B1424" />
+  <SolidColorBrush x:Key="DashboardMutedBrush" Color="#5B6B85" />
+  <SolidColorBrush x:Key="DashboardAccentBrush" Color="#0369A1" />
+  <SolidColorBrush x:Key="DashboardPrimaryBrush" Color="#0369A1" />
+  <SolidColorBrush x:Key="DashboardPrimaryHoverBrush" Color="#075985" />
+  <SolidColorBrush x:Key="DashboardPrimaryPressedBrush" Color="#0C4A6E" />
+  <SolidColorBrush x:Key="DashboardOnPrimaryBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="DashboardDisabledBrush" Color="#EAF0F8" />
+  <SolidColorBrush x:Key="DashboardDisabledTextBrush" Color="#5B6B85" />
+  <SolidColorBrush x:Key="DashboardDangerBrush" Color="#B91C3C" />
+</ResourceDictionary>
