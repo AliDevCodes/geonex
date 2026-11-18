@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>GeoNexus</AssemblyName>
+    <Product>GeoNexus</Product>
+    <AssemblyTitle>GeoNexus</AssemblyTitle>
+    <RootNamespace>FastDbExplorer.Wpf</RootNamespace>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.*" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.*" />
+    <ProjectReference Include="..\FastDbExplorer.Application\FastDbExplorer.Application.csproj" />
+    <ProjectReference Include="..\FastDbExplorer.Infrastructure\FastDbExplorer.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Assets\Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\splash.png" />
+    <Resource Include="Assets\logo.png" />
+    <Content Include="Assets\Map\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
